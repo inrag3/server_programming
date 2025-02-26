@@ -1,33 +1,38 @@
 ﻿using System.Net;
 using Logger;
 
-namespace Lab1;
-public class SimpleServer
+namespace Lab2;
+
+public class SimpleServerAsync
 {
     private readonly HttpListener _listener;
     private readonly ILogger _logger;
     
     private const string ROOT = "wwwroot"; // Корневой каталог сервера
     
-    public SimpleServer(string prefix, ILogger logger)
+    public SimpleServerAsync(string prefix, ILogger logger)
     {
         _logger = logger;
         _listener = new HttpListener();
         _listener.Prefixes.Add(prefix);
     }
 
-    public void Start()
+    public async Task StartAsync()
     {
+        var tasks = new List<Task>();
+        
         _listener.Start();
 
         try
         {
             while (_listener.IsListening)
             {
-                HttpListenerContext context = _listener.GetContext();
-                ProcessRequest(context);
+                HttpListenerContext context = await _listener.GetContextAsync();
+                Task task = ProcessRequestAsync(context);
+                tasks.Add(task);
             }
-            _listener.Stop();
+            
+            await Task.WhenAll(tasks);
         }
         catch (Exception ex)
         {
@@ -35,9 +40,8 @@ public class SimpleServer
         }
     }
     
-    private void ProcessRequest(HttpListenerContext context)
+    private async Task ProcessRequestAsync(HttpListenerContext context)
     {
-        
         string rootPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), @"..\..\.."));
         string filePath = Path.Combine(rootPath, ROOT, context.Request.Url.LocalPath.Trim('/'));
         
@@ -46,14 +50,14 @@ public class SimpleServer
 
         if (File.Exists(filePath))
         {
-            responseBytes = File.ReadAllBytes(filePath);
+            responseBytes = await File.ReadAllBytesAsync(filePath);
             context.Response.ContentType = GetMimeType(filePath);
             statusCode = 200;
         }
 
         context.Response.StatusCode = statusCode;
         context.Response.ContentLength64 = responseBytes.Length;
-        context.Response.OutputStream.Write(responseBytes, 0, responseBytes.Length);
+        await context.Response.OutputStream.WriteAsync(responseBytes);
         context.Response.OutputStream.Close();
 
         _logger.Info($"{context.Request.HttpMethod} {context.Request.Url.LocalPath} -> {statusCode}");
